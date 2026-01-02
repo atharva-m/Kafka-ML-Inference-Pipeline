@@ -31,7 +31,7 @@ jobs:
 
       - name: Run flake8
         run: |
-          flake8 *.py --max-line-length=120 --ignore=E501,W503,E302,E305,W291,W292,W293,E231,E225,E261,E262,E128,E722,E701,E203,E116,E226
+          flake8 *.py --max-line-length=120
 
       - name: Validate docker-compose
         run: |
