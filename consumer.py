@@ -52,6 +52,7 @@ class DiscoverySaver:
         self.executor.submit(self._save_task, image_array, confidence, predicted_label, metadata)
 
     def _save_task(self, image_array, confidence, predicted_label, metadata):
+        
         try:
             unique_id = str(uuid.uuid4())
             filename = f"hit_{unique_id}.jpg"

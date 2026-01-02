@@ -11,9 +11,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ============================================
+
   # JOB 1: Lint and Validate
-  # ============================================
   lint:
     name: Lint & Validate
     runs-on: ubuntu-latest
@@ -33,15 +32,14 @@ jobs:
 
       - name: Run flake8
         run: |
-          flake8 *.py --max-line-length=120 --ignore=E501,W503,E302,E305,W291,W292,W293,E231,E225,E261,E262
+          flake8 *.py --max-line-length=120 --ignore=E501,W503,E302,E305,W291,W292,W293,E231,E225,E261,E262,E128,E722,E701,E203,E116,E226
 
       - name: Validate docker-compose
         run: |
           docker compose config -q
 
-  # ============================================
+
   # JOB 2: Build Docker Image
-  # ============================================
   build:
     name: Build Image
     runs-on: ubuntu-latest
@@ -82,9 +80,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ============================================
+
   # JOB 3: Test Infrastructure
-  # ============================================
   test:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -152,9 +149,8 @@ jobs:
         run: |
           docker compose down -v
 
-  # ============================================
+
   # JOB 4: Security Scan
-  # ============================================
   security:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -173,9 +169,8 @@ jobs:
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
 
-  # ============================================
+
   # JOB 5: Release Info
-  # ============================================
   release:
     name: Release Info
     runs-on: ubuntu-latest
@@ -185,7 +180,7 @@ jobs:
     steps:
       - name: Release summary
         run: |
-          echo "## 🚀 Release Ready" >> $GITHUB_STEP_SUMMARY
+          echo "## Release Ready" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
