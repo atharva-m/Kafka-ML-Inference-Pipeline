@@ -1,23 +1,50 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
+*$py.class
+*.so
+.Python
 .venv/
 venv/
-
-# Model artifacts
-*.pth
-classes.json
-
-# Data
-discoveries/
-*.jpg
-*.png
-
-# Docker
-mongo_data/
+ENV/
+.eggs/
+*.egg-info/
+dist/
+build/
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
+*.swo
+*~
+
+# Environment (keep .env template, ignore local overrides)
+.env.local
+.env.production
+
+# Data & Models (generated at runtime)
+discoveries/
+mongo_data/
+model.pth
+classes.json
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Benchmarking
+benchmark.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+data/
