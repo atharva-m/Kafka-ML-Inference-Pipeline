@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  labels:
+    io.kompose.service: mongo
+spec:
+  ports:
+    - port: 27017
+      targetPort: 27017
+  selector:
+    io.kompose.service: mongo

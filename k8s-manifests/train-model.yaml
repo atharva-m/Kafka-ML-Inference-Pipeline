@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: model-trainer
+spec:
+  template:
+    spec:
+      containers:
+      - name: trainer
+        image: ml-inference-app:latest
+        imagePullPolicy: Never
+        command: ["python", "train.py"]
+        resources:                 
+          limits:                  
+            nvidia.com/gpu: 1
+        env:
+          - name: MODEL_PATH
+            value: "/app/discoveries/model.pth"
+          - name: CLASSES_PATH
+            value: "/app/discoveries/classes.json"      
+        envFrom:
+        - configMapRef:
+            name: consumer-env
+        volumeMounts:
+        - mountPath: /app/discoveries
+          name: storage
+      restartPolicy: OnFailure
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: discoveries-pvc

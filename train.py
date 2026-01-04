@@ -121,7 +121,7 @@ def train():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.classifier.parameters(), lr=0.001)
 
-    print(f"Starting training on {device}")
+    print(f"Starting training on {device}", flush=True)
     model.train()
 
     for epoch in range(EPOCHS):
@@ -141,7 +141,9 @@ def train():
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-        print(f"Epoch {epoch+1}/{EPOCHS} - Acc: {100 * correct / total:.2f}%")
+        print(
+            f"Epoch {epoch+1}/{EPOCHS} - Acc: {100 * correct / total:.2f}%", flush=True
+        )
 
     print("Saving model")
     torch.save(model.state_dict(), MODEL_PATH)

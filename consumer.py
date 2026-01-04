@@ -8,6 +8,7 @@ import cv2
 import torch
 import torch.multiprocessing as mp
 import numpy as np
+from datetime import datetime
 from torchvision import models, transforms
 from confluent_kafka import Consumer
 from prometheus_client import start_http_server, Gauge, Counter
@@ -29,6 +30,8 @@ DB_NAME = os.getenv("DB_NAME", "lab_discovery_db")
 STORAGE_PATH = os.getenv("STORAGE_PATH", "./discoveries")
 MODEL_PATH = os.getenv("MODEL_PATH", "model.pth")
 CLASSES_PATH = os.getenv("CLASSES_PATH", "classes.json")
+CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", 0.90))
+MAX_STORED_FILES = int(os.getenv("MAX_STORED_FILES", 100))
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -36,19 +39,44 @@ logging.basicConfig(
 
 
 class DiscoverySaver:
-    def __init__(self):
+    def __init__(self, max_files=MAX_STORED_FILES):
         os.makedirs(STORAGE_PATH, exist_ok=True)
+        self.max_files = max_files
 
         try:
             self.client = MongoClient(MONGO_URI)
             self.db = self.client[DB_NAME]
             self.collection = self.db["shapes_found"]
             logging.info("Connected to MongoDB.")
-
-        except Exception:
+        except Exception as e:
             self.client = None
+            logging.warning(f"MongoDB connection failed: {e}. Running in offline mode.")
 
         self.executor = ThreadPoolExecutor(max_workers=4)
+
+    def cleanup_storage(self):
+        """Deletes oldest files if folder exceeds limit."""
+        try:
+            files = [
+                os.path.join(STORAGE_PATH, f)
+                for f in os.listdir(STORAGE_PATH)
+                if f.endswith(".jpg") and os.path.exists(os.path.join(STORAGE_PATH, f))
+            ]
+
+            if len(files) > self.max_files:
+                files.sort(
+                    key=lambda x: os.path.getctime(x) if os.path.exists(x) else 0
+                )
+                num_to_remove = len(files) - self.max_files
+
+                for i in range(num_to_remove):
+                    try:
+                        if os.path.exists(files[i]):
+                            os.remove(files[i])
+                    except (OSError, FileNotFoundError):
+                        pass
+        except Exception:
+            pass  # Ignore cleanup errors
 
     def save_hit_async(self, image_array, confidence, predicted_label, metadata):
         self.executor.submit(
@@ -61,15 +89,15 @@ class DiscoverySaver:
             filename = f"hit_{unique_id}.jpg"
             filepath = os.path.join(STORAGE_PATH, filename)
 
-            # Save BGR Image
             cv2.imwrite(filepath, image_array)
+            self.cleanup_storage()
 
             ground_truth_str = f"{metadata.get('color_label', 'unknown')}_{metadata.get('shape_label', 'unknown')}"
 
             if self.client:
                 doc = {
                     "_id": unique_id,
-                    "timestamp": time.time(),
+                    "timestamp": datetime.now().isoformat(),
                     "confidence": float(confidence),
                     "predicted_label": predicted_label,
                     "ground_truth": ground_truth_str,
@@ -119,16 +147,22 @@ def fetch_data_process(data_queue: mp.Queue, running_event: mp.Event):
 
 
 def run_inference_process(data_queue: mp.Queue, running_event: mp.Event):
-    logging.info("GPU Inference Started")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logging.info(f"Inference Started (Device: {device})")
+
     start_http_server(METRICS_PORT)
     avg_conf_gauge = Gauge("batch_avg_confidence", "Model Confidence")
-    target_counter = Counter("target_shapes_found", "Blue Squares Found")
+    target_counter = Counter("target_shapes_found", "High Confidence Detections")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    # Wait for model if not ready
     if not os.path.exists(CLASSES_PATH) or not os.path.exists(MODEL_PATH):
-        logging.error("Model not found.")
-        return
+        logging.warning("Model/Classes not found. Waiting for training to complete...")
+        while running_event.is_set() and (
+            not os.path.exists(CLASSES_PATH) or not os.path.exists(MODEL_PATH)
+        ):
+            time.sleep(2)
+        if not running_event.is_set():
+            return
 
     with open(CLASSES_PATH, "r") as f:
         idx_to_label = json.load(f)
@@ -136,7 +170,9 @@ def run_inference_process(data_queue: mp.Queue, running_event: mp.Event):
 
     model = models.mobilenet_v2(weights=None)
     model.classifier[1] = torch.nn.Linear(model.last_channel, len(idx_to_label))
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+    model.load_state_dict(
+        torch.load(MODEL_PATH, map_location=device, weights_only=True)
+    )
     model.to(device)
     model.eval()
 
@@ -173,23 +209,15 @@ def run_inference_process(data_queue: mp.Queue, running_event: mp.Event):
 
                 conf_np = top_conf.cpu().numpy()
                 idx_np = top_class_idx.cpu().numpy()
-                avg_conf_gauge.set(np.mean(conf_np))
+                avg_conf_gauge.set(float(np.mean(conf_np)))
 
                 for i, conf in enumerate(conf_np):
                     label = idx_to_label[idx_np[i]]
-
-                    # Debugging
-                    # if conf > 0.90:
-                    # logging.info(f"Saw '{label}' with {conf:.2f}")
-                    # pass
-
-                    # String (class name) matching
                     clean_label = label.strip()
 
-                    is_red_circle = "red_circle" in clean_label
-
-                    if is_red_circle and conf > 0.90:
-                        logging.info(f"TARGET MATCH: {clean_label} (Conf: {conf:.2f})")
+                    # Save ALL high-confidence detections
+                    if conf > CONFIDENCE_THRESHOLD:
+                        logging.info(f"MATCH: {clean_label} (Conf: {conf:.2f})")
                         target_counter.inc()
                         saver.save_hit_async(
                             batch_imgs[i], conf, clean_label, batch_metas[i]
@@ -226,6 +254,7 @@ def main():
         inference.join()
 
     except KeyboardInterrupt:
+        logging.info("Shutting down...")
         running_event.clear()
         fetcher.terminate()
         inference.terminate()

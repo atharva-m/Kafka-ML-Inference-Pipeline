@@ -1,0 +1,31 @@
+apiVersion: v1
+data:
+  BATCH_SIZE: "8"
+  CENTER: "256"
+  CLASSES_PATH: classes.json
+  COLORS_GREEN: (0, 255, 0)
+  COLORS_RED: (0, 0, 255)
+  COMPRESSION_TYPE: lz4
+  DB_NAME: lab_discovery_db
+  EPOCHS: "3"
+  IMG_HEIGHT: "512"
+  IMG_WIDTH: "512"
+  KAFKA_BOOTSTRAP_SERVER: kafka:29092
+  KAFKA_CONSUMER_GROUP: gpu_cluster_h100
+  KAFKA_TOPIC: image_data
+  MAX_MESSAGE_BYTES: "10485760"
+  MAX_SOCKET_REQUEST_BYTES: "104857600"
+  METRICS_PORT: "8000"
+  MODEL_PATH: model.pth
+  MONGO_URI: mongodb://mongo:27017/
+  PRODUCER_INTERVAL: "0.05"
+  QUEUE_SIZE: "200"
+  SAMPLES_PER_CLASS: "300"
+  SHAPE_SIZE: "150"
+  SHAPES: '["circle", "square"]'
+  STORAGE_PATH: ./discoveries
+kind: ConfigMap
+metadata:
+  labels:
+    io.kompose.service: consumer-env
+  name: env

@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: producer
+  labels:
+    io.kompose.service: producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: producer
+  template:
+    metadata:
+      labels:
+        io.kompose.service: producer
+    spec:
+      containers:
+        - name: producer
+          image: ml-inference-app:latest 
+          imagePullPolicy: Never          
+          
+          command: ["python", "producer.py"]
+          
+          envFrom:
+            - configMapRef:
+                name: consumer-env 
+      restartPolicy: Always
