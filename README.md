@@ -239,25 +239,27 @@ kubectl get hpa
 
 ```
 k8s-manifests/
-├── consumer-configmap.yaml           # Consumer environment variables
-├── consumer-deployment.yaml          # Consumer pods with GPU resources
-├── consumer-hpa.yaml                 # Horizontal Pod Autoscaler (1-8 replicas)
-├── consumer-service.yaml             # Consumer service for Prometheus scraping
-├── discoveries-pvc.yaml              # Shared PVC for model + detections
-├── env-configmap.yaml                # Shared environment config
-├── gpu-sharing-config.yaml           # NVIDIA GPU time-slicing (8 replicas per GPU)
-├── grafana-deployment.yaml           # Grafana monitoring
+├── consumer-cm0-configmap.yaml           # Consumer binary data (model/app)
+├── consumer-deployment.yaml              # Consumer pods with GPU resources
+├── consumer-hpa.yaml                     # Horizontal Pod Autoscaler (1-8 replicas)
+├── consumer-service.yaml                 # Consumer service for Prometheus scraping
+├── discoveries-pvc.yaml                  # Shared PVC for model + detections
+├── env-configmap.yaml                    # Shared environment config
+├── gpu-sharing-config.yaml               # NVIDIA GPU time-slicing (8 replicas per GPU)
+├── grafana-deployment.yaml               # Grafana monitoring
 ├── grafana-service.yaml
-├── kafka-deployment.yaml             # Kafka broker
+├── kafka-deployment.yaml                 # Kafka broker
 ├── kafka-service.yaml
-├── mongo-deployment.yaml             # MongoDB database
+├── mongo-data-persistentvolumeclaim.yaml # MongoDB persistent storage
+├── mongo-deployment.yaml                 # MongoDB database
 ├── mongo-service.yaml
-├── producer-deployment.yaml          # Image producer
-├── prometheus-cm0-configmap.yaml     # Prometheus scrape config
-├── prometheus-deployment.yaml        # Metrics collection
+├── producer-cm0-configmap.yaml           # Producer binary data (app)
+├── producer-deployment.yaml              # Image producer
+├── prometheus-cm0-configmap.yaml         # Prometheus scrape config
+├── prometheus-deployment.yaml            # Metrics collection
 ├── prometheus-service.yaml
-├── train-model.yaml                  # One-time model training Job
-├── zookeeper-deployment.yaml         # Kafka coordinator
+├── train-model.yaml                      # One-time model training Job
+├── zookeeper-deployment.yaml             # Kafka coordinator
 └── zookeeper-service.yaml
 ```
 
