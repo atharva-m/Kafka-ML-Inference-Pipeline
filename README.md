@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 # Velox
 
@@ -14,14 +14,13 @@
 [![Security: Trivy](https://img.shields.io/badge/security-trivy-blue)](https://github.com/aquasecurity/trivy)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[Overview](#overview) •
-[Architecture](#architecture) •
-[Quick Start](#quick-start) •
-[Kubernetes Deployment](#kubernetes-deployment) •
-[GPU Configuration](#gpu-configuration) •
-[Configuration](#configuration) •
-[Monitoring](#monitoring) •
-[CI/CD](#cicd) •
+[Overview](#overview) â€¢
+[Performance](#performance) â€¢
+[Architecture](#architecture) â€¢
+[Quick Start](#quick-start) â€¢
+[Kubernetes Deployment](#kubernetes-deployment) â€¢
+[GPU Configuration](#gpu-configuration) â€¢
+[Monitoring](#monitoring) â€¢
 [Contributing](#contributing)
 
 </div>
@@ -34,16 +33,14 @@ This project implements a **production-ready, real-time image classification pip
 
 ### Key Features
 
-- **Real-Time Processing** — Sub-second inference on streaming images via Kafka
-- **GPU-Accelerated** — Batched inference using PyTorch with CUDA support
-- **GPU Time-Slicing** — Multiple consumer pods share a single GPU efficiently
-- **Horizontal Pod Autoscaling** — Automatic scaling based on CPU utilization
-- **Kubernetes Native** — Production-ready with auto-scaling consumers and persistent storage
-- **Observable** — Built-in Prometheus metrics and Grafana dashboards
-- **Containerized** — Fully Dockerized with health checks and dependency management
-- **Configurable** — Environment-based configuration for all components
-- **Persistent Storage** — MongoDB integration for storing detection results
-- **CI/CD Ready** — Automated testing, linting, and Docker image builds
+- **High Throughput** â€” 1,683 images/sec with 8 GPU-accelerated pods
+- **GPU Time-Slicing** â€” 8 pods share a single NVIDIA GPU efficiently
+- **8.8x Scaling** â€” From 192 img/sec (single) to 1,683 img/sec (distributed)
+- **Horizontal Pod Autoscaling** â€” Automatic scaling from 1-8 pods based on CPU utilization
+- **High Accuracy** â€” 98.5% model confidence on shape classification
+- **Observable** â€” Built-in Prometheus metrics and Grafana dashboards
+- **Kubernetes Native** â€” Production-ready with auto-scaling and persistent storage
+- **Containerized** â€” Fully Dockerized with health checks and dependency management
 
 ### Use Cases
 
@@ -54,55 +51,90 @@ This project implements a **production-ready, real-time image classification pip
 
 ---
 
+## Performance
+
+### Benchmark Results
+
+Tested on NVIDIA RTX 4070 with Minikube (8 CPUs, 20GB RAM):
+
+| Metric | Single Process | Kubernetes (8 pods) | Improvement |
+|--------|---------------|---------------------|-------------|
+| **Throughput** | 192 img/sec | 1,683 img/sec | **8.8x** |
+| **Per-Pod Throughput** | â€” | 210 img/sec | â€” |
+| **Peak Throughput** | â€” | 1,949 img/sec | â€” |
+| **Model Confidence** | 100% | 98.5% | â€” |
+
+### Resource Utilization
+
+| Resource | Per Pod | Total (8 pods) |
+|----------|---------|----------------|
+| **CPU** | ~950m | ~7.6 cores |
+| **Memory** | ~1.5 GB | ~12 GB |
+| **GPU** | 1/8 slice | 1 GPU (shared) |
+
+### Scalability
+
+```
+Pods    Throughput      Per-Pod         Efficiency
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+1       ~210 img/sec    210 img/sec     100%
+4       ~840 img/sec    210 img/sec     100%
+8       ~1,683 img/sec  210 img/sec     100%
+```
+
+The system scales linearly with GPU time-slicing, maintaining consistent per-pod throughput as replicas increase.
+
+---
+
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                         KAFKA ML INFERENCE PIPELINE                              │
-│                           with GPU Time-Slicing                                  │
-└──────────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                         KAFKA ML INFERENCE PIPELINE                              â”‚
+â”‚                           with GPU Time-Slicing                                  â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-                                                    ┌─────────────────────────────┐
-                                                    │      GPU (Time-Sliced)      │
-                                                    │  ┌─────┬─────┬─────┬─────┐  │
-                                                    │  │ C1  │ C2  │ ... │ C8  │  │
-                                                    │  └─────┴─────┴─────┴─────┘  │
-                                                    └─────────────────────────────┘
-                                                                  ▲
-┌──────────────┐      ┌──────────────┐      ┌──────────────────────────────────────┐
-│              │      │              │      │       CONSUMER PODS (HPA: 1-8)       │
-│  PRODUCER    │ ---> │    KAFKA     │ ---> │  ┌────────────┐   ┌────────────┐     │
-│    POD       │      │     POD      │      │  │ Consumer 1 │   │ Consumer 2 │ ... │
-│              │      │              │      │  │   (GPU)    │   │   (GPU)    │     │
-│  Synthetic   │      │  Partitioned │      │  └─────┬──────┘   └─────┬──────┘     │
-│  Image Gen   │      │    Topic     │      │        │                │            │
-└──────────────┘      └──────────────┘      └────────|────────────────|────────────┘
-                                                     │                │
-                      ┌──────────────┐      ┌────────▼────────────────▼────────────┐
-                      │   GRAFANA    │      │            PROMETHEUS                │
-                      │     POD      │ <--- │               POD                    │
-                      │              │      │                                      │
-                      │  Dashboards  │      │             Metrics                  │
-                      └──────────────┘      └──────────────────────────────────────┘
-                                                     │
-                                            ┌────────▼─────────┐
-                                            │                  │
-                                            │    MONGODB POD   │
-                                            │   + PVC Storage  │
-                                            │                  │
-                                            └──────────────────┘
+                                                    â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                                                    â”‚      GPU (Time-Sliced)      â”‚
+                                                    â”‚  â”Œâ”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”  â”‚
+                                                    â”‚  â”‚ C1  â”‚ C2  â”‚ ... â”‚ C8  â”‚  â”‚
+                                                    â”‚  â””â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”˜  â”‚
+                                                    â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                                                  â–²
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”      â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”      â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚              â”‚      â”‚              â”‚      â”‚       CONSUMER PODS (HPA: 1-8)       â”‚
+â”‚  PRODUCER    â”‚ ---> â”‚    KAFKA     â”‚ ---> â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”     â”‚
+â”‚    POD       â”‚      â”‚     POD      â”‚      â”‚  â”‚ Consumer 1 â”‚   â”‚ Consumer 2 â”‚ ... â”‚
+â”‚              â”‚      â”‚              â”‚      â”‚  â”‚   (GPU)    â”‚   â”‚   (GPU)    â”‚     â”‚
+â”‚  Synthetic   â”‚      â”‚  8 Partitionsâ”‚      â”‚  â””â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”˜   â””â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”˜     â”‚
+â”‚  Image Gen   â”‚      â”‚  1,700+/sec  â”‚      â”‚        â”‚                â”‚            â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜      â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜      â””â”€â”€â”€â”€â”€â”€â”€â”€|â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€|â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                                     â”‚                â”‚
+                      â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”      â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                      â”‚   GRAFANA    â”‚      â”‚            PROMETHEUS                â”‚
+                      â”‚     POD      â”‚ <--- â”‚               POD                    â”‚
+                      â”‚              â”‚      â”‚                                      â”‚
+                      â”‚  Dashboards  â”‚      â”‚        Metrics (8 pods)              â”‚
+                      â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜      â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                                     â”‚
+                                            â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                                            â”‚                  â”‚
+                                            â”‚    MONGODB POD   â”‚
+                                            â”‚   + PVC Storage  â”‚
+                                            â”‚                  â”‚
+                                            â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ### Components
 
 | Component | Description | Technology |
 |-----------|-------------|------------|
-| **Producer** | Generates synthetic shape images and streams them to Kafka | Python, OpenCV |
-| **Consumer** | GPU-accelerated inference with auto-scaling (1-8 replicas) | PyTorch, CUDA |
+| **Producer** | Generates synthetic shape images at 1,700+ msg/sec | Python, OpenCV |
+| **Consumer** | GPU-accelerated inference, 210 img/sec per pod | PyTorch, CUDA |
 | **Model Trainer** | One-time Kubernetes Job to train model on GPU | PyTorch |
-| **Kafka** | Distributed message broker with partitioned topics | Apache Kafka |
+| **Kafka** | Distributed message broker with 8 partitions | Apache Kafka |
 | **MongoDB** | Document store for persisting detection results | MongoDB |
-| **Prometheus** | Time-series metrics collection | Prometheus |
+| **Prometheus** | Time-series metrics from all consumer pods | Prometheus |
 | **Grafana** | Real-time monitoring dashboards | Grafana |
 
 ---
@@ -174,11 +206,11 @@ Use the provided management script for one-command deployment:
 
 **Windows (PowerShell):**
 ```powershell
-# Start cluster (GPU-enabled by default)
+# Start cluster with GPU time-slicing (8 pods sharing 1 GPU)
 .\k8s.ps1 -Action start
 
-# Start with custom Kafka partitions
-.\k8s.ps1 -Action start -Partitions 5
+# Start with custom resources
+.\k8s.ps1 -Action start -CPUs 16 -Memory 32768 -Partitions 8
 
 # Stop and cleanup
 .\k8s.ps1 -Action stop
@@ -193,41 +225,40 @@ Use the provided management script for one-command deployment:
 ### What the Script Does
 
 1. Starts Minikube with GPU passthrough (`--gpus all`)
-2. Enables NVIDIA device plugin for Kubernetes
-3. Builds the Docker image inside Minikube
-4. Deploys infrastructure (Kafka, Zookeeper, MongoDB)
-5. Deploys monitoring stack (Prometheus, Grafana)
-6. Creates Kafka topic with specified partitions
+2. Configures NVIDIA GPU time-slicing (8 replicas per GPU)
+3. Enables metrics server for HPA
+4. Builds the Docker image inside Minikube
+5. Deploys infrastructure (Kafka, Zookeeper, MongoDB)
+6. Creates Kafka topic with 8 partitions
 7. Runs model training Job (one-time)
-8. Deploys consumer with HPA (auto-scales 1-8 pods)
-9. Deploys producer
+8. Deploys monitoring stack (Prometheus, Grafana)
+9. Deploys consumer with HPA (auto-scales 1-8 pods)
+10. Deploys producer
 
 ### Manual Deployment
 
 ```bash
 # Start Minikube with GPU
-minikube start --driver=docker --gpus all
-minikube addons enable nvidia-device-plugin
+minikube start --driver=docker --gpus all --cpus 8 --memory 20480
+
+# Apply GPU time-slicing config
+kubectl apply -f k8s-manifests/gpu-sharing-config.yaml
+kubectl apply -f k8s-manifests/nvidia-device-plugin.yaml
+
+# Verify 8 GPU slices are available
+kubectl get nodes -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}'
+# Should output: 8
 
 # Build image inside Minikube
 minikube image build -t ml-inference-app:latest .
 
-# Apply GPU time-slicing config (optional, for multi-pod GPU sharing)
-kubectl apply -f k8s-manifests/gpu-sharing-config.yaml
-
 # Deploy all manifests
 kubectl apply -f k8s-manifests/
 
-# Run model training Job
-kubectl apply -f k8s-manifests/train-model.yaml
-
-# Wait for training to complete
-kubectl wait --for=condition=complete job/model-trainer --timeout=300s
-
-# Create Kafka topic
+# Create Kafka topic with 8 partitions
 kubectl exec deployment/kafka -- kafka-topics.sh \
   --create --topic image_data \
-  --partitions 3 --replication-factor 1 \
+  --partitions 8 --replication-factor 1 \
   --bootstrap-server localhost:29092
 
 # Check status
@@ -239,28 +270,29 @@ kubectl get hpa
 
 ```
 k8s-manifests/
-├── consumer-cm0-configmap.yaml           # Consumer binary data (model/app)
-├── consumer-deployment.yaml              # Consumer pods with GPU resources
-├── consumer-hpa.yaml                     # Horizontal Pod Autoscaler (1-8 replicas)
-├── consumer-service.yaml                 # Consumer service for Prometheus scraping
-├── discoveries-pvc.yaml                  # Shared PVC for model + detections
-├── env-configmap.yaml                    # Shared environment config
-├── gpu-sharing-config.yaml               # NVIDIA GPU time-slicing (8 replicas per GPU)
-├── grafana-deployment.yaml               # Grafana monitoring
-├── grafana-service.yaml
-├── kafka-deployment.yaml                 # Kafka broker
-├── kafka-service.yaml
-├── mongo-data-persistentvolumeclaim.yaml # MongoDB persistent storage
-├── mongo-deployment.yaml                 # MongoDB database
-├── mongo-service.yaml
-├── producer-cm0-configmap.yaml           # Producer binary data (app)
-├── producer-deployment.yaml              # Image producer
-├── prometheus-cm0-configmap.yaml         # Prometheus scrape config
-├── prometheus-deployment.yaml            # Metrics collection
-├── prometheus-service.yaml
-├── train-model.yaml                      # One-time model training Job
-├── zookeeper-deployment.yaml             # Kafka coordinator
-└── zookeeper-service.yaml
+â”œâ”€â”€ consumer-cm0-configmap.yaml           # Consumer binary data (model/app)
+â”œâ”€â”€ consumer-deployment.yaml              # Consumer pods with GPU resources
+â”œâ”€â”€ consumer-hpa.yaml                     # Horizontal Pod Autoscaler (1-8 replicas)
+â”œâ”€â”€ consumer-service.yaml                 # Consumer service for Prometheus scraping
+â”œâ”€â”€ discoveries-pvc.yaml                  # Shared PVC for model + detections
+â”œâ”€â”€ env-configmap.yaml                    # Shared environment config
+â”œâ”€â”€ gpu-sharing-config.yaml               # NVIDIA GPU time-slicing (8 replicas per GPU)
+â”œâ”€â”€ nvidia-device-plugin.yaml             # NVIDIA device plugin DaemonSet
+â”œâ”€â”€ grafana-deployment.yaml               # Grafana monitoring
+â”œâ”€â”€ grafana-service.yaml
+â”œâ”€â”€ kafka-deployment.yaml                 # Kafka broker
+â”œâ”€â”€ kafka-service.yaml
+â”œâ”€â”€ mongo-data-persistentvolumeclaim.yaml # MongoDB persistent storage
+â”œâ”€â”€ mongo-deployment.yaml                 # MongoDB database
+â”œâ”€â”€ mongo-service.yaml
+â”œâ”€â”€ producer-cm0-configmap.yaml           # Producer binary data (app)
+â”œâ”€â”€ producer-deployment.yaml              # Image producer
+â”œâ”€â”€ prometheus-cm0-configmap.yaml         # Prometheus scrape config
+â”œâ”€â”€ prometheus-deployment.yaml            # Metrics collection
+â”œâ”€â”€ prometheus-service.yaml
+â”œâ”€â”€ train-model.yaml                      # One-time model training Job
+â”œâ”€â”€ zookeeper-deployment.yaml             # Kafka coordinator
+â””â”€â”€ zookeeper-service.yaml
 ```
 
 ---
@@ -269,9 +301,10 @@ k8s-manifests/
 
 ### GPU Time-Slicing
 
-This project uses NVIDIA GPU time-slicing to allow multiple consumer pods to share a single GPU. This is configured in `gpu-sharing-config.yaml`:
+This project uses NVIDIA GPU time-slicing to allow 8 consumer pods to share a single GPU, achieving **8.8x throughput scaling**.
 
 ```yaml
+# gpu-sharing-config.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -292,18 +325,21 @@ data:
 1. Single physical GPU is virtualized into 8 "slices"
 2. Each consumer pod requests `nvidia.com/gpu: 1` (one slice)
 3. Pods take turns using the GPU (time-multiplexed)
-4. HPA can scale consumers from 1 to 8 based on CPU usage
+4. HPA scales consumers from 1-8 based on CPU utilization
+5. Each pod achieves ~210 img/sec throughput
 
-### Verify GPU Availability
+### Verify GPU Configuration
 
 ```bash
-# Check GPU resources on node
-kubectl describe node | grep -A 10 "Allocated resources"
-
-# Should show: nvidia.com/gpu: 8 (with time-slicing)
+# Check GPU slices available on node
+kubectl get nodes -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}'
+# Should output: 8
 
 # Check GPU usage in pod
 kubectl exec deployment/consumer -- nvidia-smi
+
+# Check all consumer pods are using GPU
+kubectl get pods -l io.kompose.service=consumer
 ```
 
 ### Horizontal Pod Autoscaler
@@ -321,7 +357,7 @@ spec:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 50
+        averageUtilization: 80
 ```
 
 Monitor HPA:
@@ -335,35 +371,13 @@ kubectl get hpa consumer-hpa --watch
 
 All configuration is managed through environment variables.
 
-### Docker Compose
-
-Configure via `.env` file.
-
-### Kubernetes
-
-Configure via ConfigMaps:
-
-```yaml
-# consumer-configmap.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: consumer-env
-data:
-  KAFKA_BOOTSTRAP_SERVER: "kafka:29092"
-  MONGO_URI: "mongodb://mongo:27017/"
-  BATCH_SIZE: "8"
-  CONFIDENCE_THRESHOLD: "0.90"
-  MAX_STORED_FILES: "100"
-```
-
 ### Configuration Reference
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `KAFKA_BOOTSTRAP_SERVER` | Kafka broker address | `kafka:29092` |
 | `KAFKA_TOPIC` | Topic for image streaming | `image_data` |
-| `KAFKA_CONSUMER_GROUP` | Consumer group ID | `gpu_cluster_h100` |
+| `KAFKA_CONSUMER_GROUP` | Consumer group ID | `gpu_rtx_4070` |
 | `BATCH_SIZE` | Inference batch size | `8` |
 | `QUEUE_SIZE` | Internal queue size | `200` |
 | `METRICS_PORT` | Prometheus metrics port | `8000` |
@@ -386,8 +400,8 @@ Access Prometheus:
 - **Kubernetes:** `kubectl port-forward svc/prometheus 9090:9090`
 
 Available metrics:
-- `batch_avg_confidence` — Average model confidence per batch
-- `target_shapes_found` — Counter of detected shapes (all classes)
+- `batch_avg_confidence` â€” Average model confidence per batch
+- `target_shapes_found_total` â€” Counter of detected shapes (all classes)
 
 ### Grafana Dashboards
 
@@ -400,30 +414,31 @@ Default credentials: `admin` / `admin`
 #### Example Queries
 
 ```promql
-# Average Confidence Over Time
-batch_avg_confidence
+# Aggregate throughput (all pods)
+sum(rate(target_shapes_found_total[1m]))
 
-# Detection Rate (per minute)
-rate(target_shapes_found[1m]) * 60
+# Average Confidence
+avg(batch_avg_confidence)
 
-# Detections by Consumer Pod
-sum by (pod) (target_shapes_found)
+# Detection Rate by Pod
+sum by (pod) (rate(target_shapes_found_total[1m]))
 ```
 
 ### MongoDB Queries
 
 Query detections in MongoDB Compass:
 
-```json
-// Latest green_square detection
-{"predicted_label": "green_square"}
-// Sort: {"timestamp": -1}, Limit: 1
-
-// All detections with new timestamp format
-{"timestamp": {"$type": "string"}}
+```javascript
+// Latest detections
+db.shapes_found.find().sort({timestamp: -1}).limit(10)
 
 // Count by label
-// Use Aggregation: [{"$group": {"_id": "$predicted_label", "count": {"$sum": 1}}}]
+db.shapes_found.aggregate([
+  {$group: {_id: "$predicted_label", count: {$sum: 1}}}
+])
+
+// High confidence detections
+db.shapes_found.find({confidence: {$gt: 0.95}})
 ```
 
 ---
@@ -453,28 +468,29 @@ docker pull ghcr.io/atharva-m/Velox:latest
 ## Project Structure
 
 ```
-velox/
-├── .github/
-│   └── workflows/
-│       └── ci.yml               # CI/CD pipeline
-├── k8s-manifests/               # Kubernetes manifests
-│   ├── consumer-deployment.yaml
-│   ├── consumer-hpa.yaml        # Horizontal Pod Autoscaler
-│   ├── gpu-sharing-config.yaml  # GPU time-slicing config
-│   ├── train-model.yaml         # Model training Job
-│   └── ...
-├── consumer.py                  # ML inference consumer
-├── producer.py                  # Synthetic image generator
-├── train.py                     # Model training script
-├── start.sh                     # Container entrypoint
-├── k8s.sh                       # Kubernetes management (Linux/macOS)
-├── k8s.ps1                      # Kubernetes management (Windows)
-├── docker-compose.yml           # Docker Compose orchestration
-├── Dockerfile                   # Container image definition
-├── prometheus.yml               # Prometheus configuration
-├── requirements.txt             # Python dependencies
-├── .env                         # Environment configuration
-└── discoveries/                 # Saved detection images
+Velox/
+â”œâ”€â”€ .github/
+â”‚   â””â”€â”€ workflows/
+â”‚       â””â”€â”€ ci.yml               # CI/CD pipeline
+â”œâ”€â”€ k8s-manifests/               # Kubernetes manifests
+â”‚   â”œâ”€â”€ consumer-deployment.yaml
+â”‚   â”œâ”€â”€ consumer-hpa.yaml        # Horizontal Pod Autoscaler
+â”‚   â”œâ”€â”€ gpu-sharing-config.yaml  # GPU time-slicing config
+â”‚   â”œâ”€â”€ nvidia-device-plugin.yaml# NVIDIA device plugin
+â”‚   â”œâ”€â”€ train-model.yaml         # Model training Job
+â”‚   â””â”€â”€ ...
+â”œâ”€â”€ consumer.py                  # ML inference consumer
+â”œâ”€â”€ producer.py                  # Synthetic image generator
+â”œâ”€â”€ train.py                     # Model training script
+â”œâ”€â”€ start.sh                     # Container entrypoint
+â”œâ”€â”€ k8s.sh                       # Kubernetes management (Linux/macOS)
+â”œâ”€â”€ k8s.ps1                      # Kubernetes management (Windows)
+â”œâ”€â”€ docker-compose.yml           # Docker Compose orchestration
+â”œâ”€â”€ Dockerfile                   # Container image definition
+â”œâ”€â”€ prometheus.yml               # Prometheus configuration
+â”œâ”€â”€ requirements.txt             # Python dependencies
+â”œâ”€â”€ .env                         # Environment configuration
+â””â”€â”€ discoveries/                 # Saved detection images
 ```
 
 ---
@@ -484,29 +500,34 @@ velox/
 ### High Throughput (Kubernetes)
 
 ```bash
-# Increase Kafka partitions
+# Ensure 8 Kafka partitions for parallel processing
 kubectl exec deployment/kafka -- kafka-topics.sh \
   --alter --topic image_data --partitions 8 \
   --bootstrap-server localhost:29092
 
-# HPA will auto-scale consumers up to 8
-# Or manually scale:
+# Scale to 8 consumers (or let HPA auto-scale)
 kubectl scale deployment consumer --replicas=8
+
+# Verify throughput via Prometheus
+# sum(rate(target_shapes_found_total[1m])) should show ~1,700/sec
 ```
 
-### High Throughput (Docker)
+### Managing Kafka Backlog
 
-```env
-BATCH_SIZE=32           # Larger batches for GPU efficiency
-QUEUE_SIZE=500          # Larger buffer for burst handling
-PRODUCER_INTERVAL=0.01  # Faster image generation
-```
+```bash
+# Check consumer lag
+kubectl exec deployment/kafka -- kafka-consumer-groups.sh \
+  --describe --group gpu_rtx_4070 \
+  --bootstrap-server localhost:29092
 
-### Low Latency
-
-```env
-BATCH_SIZE=1            # Process immediately
-QUEUE_SIZE=50           # Smaller buffer
+# Reset offsets to latest (skip backlog)
+kubectl scale deployment consumer --replicas=0
+kubectl exec deployment/kafka -- kafka-consumer-groups.sh \
+  --bootstrap-server localhost:29092 \
+  --group gpu_rtx_4070 \
+  --reset-offsets --to-latest \
+  --topic image_data --execute
+kubectl scale deployment consumer --replicas=8
 ```
 
 ---
@@ -517,14 +538,14 @@ QUEUE_SIZE=50           # Smaller buffer
 
 **Pods stuck in Pending (GPU):**
 ```bash
-# Check if GPU is available
-kubectl describe node | grep nvidia.com/gpu
+# Check if GPU slices are available
+kubectl get nodes -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}'
 
-# Check device plugin
-kubectl get pods -n kube-system | grep nvidia
+# Check device plugin is running
+kubectl get pods -n kube-system -l name=nvidia-device-plugin-ds
 
-# Verify GPU time-slicing
-kubectl get configmap -n kube-system time-slicing-config -o yaml
+# Check device plugin logs
+kubectl logs -n kube-system -l name=nvidia-device-plugin-ds
 ```
 
 **Model not found:**
@@ -545,16 +566,17 @@ kubectl exec deployment/kafka -- kafka-topics.sh \
   --describe --topic image_data \
   --bootstrap-server localhost:29092
 
-# Check consumer group
+# Check consumer group lag
 kubectl exec deployment/kafka -- kafka-consumer-groups.sh \
-  --describe --group gpu_cluster_h100 \
+  --describe --group gpu_rtx_4070 \
   --bootstrap-server localhost:29092
 ```
 
 **HPA not scaling:**
 ```bash
-# Check metrics server
-kubectl get deployment metrics-server -n kube-system
+# Enable metrics server
+minikube addons disable metrics-server
+minikube addons enable metrics-server
 
 # Check HPA status
 kubectl describe hpa consumer-hpa
@@ -581,7 +603,7 @@ docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-1. Fork the repository
+1. Fork the Veloxsitory
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
@@ -608,9 +630,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-**Built with ❤️ using PyTorch, Kafka, Kubernetes, and Docker**
+**Built with â¤ï¸ using PyTorch, Kafka, Kubernetes, and Docker**
 
-[Report Bug](https://github.com/atharva-m/Velox/issues) •
+[Veloxrt Bug](https://github.com/atharva-m/Velox/issues) â€¢
 [Request Feature](https://github.com/atharva-m/Velox/issues)
 
 </div>

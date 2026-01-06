@@ -1,4 +1,4 @@
-import json
+﻿import json
 import time
 import queue
 import logging
@@ -11,7 +11,7 @@ import numpy as np
 from datetime import datetime
 from torchvision import models, transforms
 from confluent_kafka import Consumer
-from prometheus_client import start_http_server, Gauge, Counter
+from prometheus_client import start_http_server, Gauge, Counter, Histogram
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from concurrent.futures import ThreadPoolExecutor
@@ -23,7 +23,7 @@ TOPIC = os.getenv("KAFKA_TOPIC", "image_data")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 8))
 QUEUE_SIZE = int(os.getenv("QUEUE_SIZE", 200))
 KAFKA_BROKER = os.getenv("KAFKA_BOOTSTRAP_SERVER", "localhost:9092")
-KAFKA_CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", "gpu_cluster_h100")
+KAFKA_CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", "gpu_rtx_4070")
 METRICS_PORT = int(os.getenv("METRICS_PORT", 8000))
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME = os.getenv("DB_NAME", "lab_discovery_db")
@@ -78,12 +78,21 @@ class DiscoverySaver:
         except Exception:
             pass  # Ignore cleanup errors
 
-    def save_hit_async(self, image_array, confidence, predicted_label, metadata):
+    def save_hit_async(
+        self, image_array, confidence, predicted_label, metadata, latency_ms
+    ):
         self.executor.submit(
-            self._save_task, image_array, confidence, predicted_label, metadata
+            self._save_task,
+            image_array,
+            confidence,
+            predicted_label,
+            metadata,
+            latency_ms,
         )
 
-    def _save_task(self, image_array, confidence, predicted_label, metadata):
+    def _save_task(
+        self, image_array, confidence, predicted_label, metadata, latency_ms
+    ):
         try:
             unique_id = str(uuid.uuid4())
             filename = f"hit_{unique_id}.jpg"
@@ -102,6 +111,7 @@ class DiscoverySaver:
                     "predicted_label": predicted_label,
                     "ground_truth": ground_truth_str,
                     "file_path": filepath,
+                    "latency_ms": latency_ms,
                 }
                 self.collection.insert_one(doc)
                 logging.info(f"Saved to database: {predicted_label}")
@@ -128,11 +138,15 @@ def fetch_data_process(data_queue: mp.Queue, running_event: mp.Event):
             continue
 
         raw_bytes = msg.value()
+        receive_time = time.time()
 
         try:
             header_len = int.from_bytes(raw_bytes[:4], byteorder="big")
             meta_json = raw_bytes[4 : 4 + header_len]
             metadata = json.loads(meta_json)
+
+            # Add receive timestamp for latency calculation
+            metadata["_receive_time"] = receive_time
 
             img_bytes = raw_bytes[4 + header_len :]
             nparr = np.frombuffer(img_bytes, np.uint8)
@@ -151,8 +165,23 @@ def run_inference_process(data_queue: mp.Queue, running_event: mp.Event):
     logging.info(f"Inference Started (Device: {device})")
 
     start_http_server(METRICS_PORT)
+
+    # Metrics
     avg_conf_gauge = Gauge("batch_avg_confidence", "Model Confidence")
     target_counter = Counter("target_shapes_found", "High Confidence Detections")
+
+    # Latency metrics
+    latency_histogram = Histogram(
+        "inference_latency_seconds",
+        "End-to-end inference latency in seconds",
+        buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 1.0),
+    )
+    latency_gauge = Gauge(
+        "inference_latency_ms", "Current inference latency in milliseconds"
+    )
+    batch_latency_gauge = Gauge(
+        "batch_processing_ms", "Batch processing time in milliseconds"
+    )
 
     # Wait for model if not ready
     if not os.path.exists(CLASSES_PATH) or not os.path.exists(MODEL_PATH):
@@ -195,6 +224,8 @@ def run_inference_process(data_queue: mp.Queue, running_event: mp.Event):
             batch_metas.append(meta)
 
             if len(batch_imgs) >= BATCH_SIZE:
+                batch_start = time.time()
+
                 tensors = []
                 for b_img in batch_imgs:
                     rgb_img = cv2.cvtColor(b_img, cv2.COLOR_BGR2RGB)
@@ -207,6 +238,10 @@ def run_inference_process(data_queue: mp.Queue, running_event: mp.Event):
                     probs = torch.nn.functional.softmax(outputs, dim=1)
                     top_conf, top_class_idx = torch.max(probs, dim=1)
 
+                batch_end = time.time()
+                batch_time_ms = (batch_end - batch_start) * 1000
+                batch_latency_gauge.set(batch_time_ms)
+
                 conf_np = top_conf.cpu().numpy()
                 idx_np = top_class_idx.cpu().numpy()
                 avg_conf_gauge.set(float(np.mean(conf_np)))
@@ -215,12 +250,27 @@ def run_inference_process(data_queue: mp.Queue, running_event: mp.Event):
                     label = idx_to_label[idx_np[i]]
                     clean_label = label.strip()
 
+                    # Calculate end-to-end latency
+                    producer_time = batch_metas[i].get("timestamp", batch_end)
+                    receive_time = batch_metas[i].get("_receive_time", batch_end)
+                    e2e_latency = batch_end - producer_time
+
+                    # Record latency metrics
+                    latency_histogram.observe(e2e_latency)
+                    latency_gauge.set(e2e_latency * 1000)  # Convert to ms
+
                     # Save ALL high-confidence detections
                     if conf > CONFIDENCE_THRESHOLD:
-                        logging.info(f"MATCH: {clean_label} (Conf: {conf:.2f})")
+                        logging.info(
+                            f"MATCH: {clean_label} (Conf: {conf:.2f}, Latency: {e2e_latency*1000:.1f}ms)"
+                        )
                         target_counter.inc()
                         saver.save_hit_async(
-                            batch_imgs[i], conf, clean_label, batch_metas[i]
+                            batch_imgs[i],
+                            conf,
+                            clean_label,
+                            batch_metas[i],
+                            e2e_latency * 1000,
                         )
 
                 batch_imgs = []
