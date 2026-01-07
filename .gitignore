@@ -42,7 +42,6 @@ htmlcov/
 # Benchmarking
 benchmark.py
 benchmark_k8s.py
-consumer.py
 
 # OS
 .DS_Store
