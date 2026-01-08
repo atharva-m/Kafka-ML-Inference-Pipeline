@@ -149,7 +149,7 @@ Best for local development and testing.
 #### Build and Start
 
 ```bash
-git clone [https://github.com/atharva-m/Velox.git](https://github.com/atharva-m/Velox.git)
+git clone https://github.com/atharva-m/Velox.git
 cd Velox
 
 # Build the image
